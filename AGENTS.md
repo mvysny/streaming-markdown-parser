@@ -20,6 +20,7 @@ keeps its own kramdown converter.
 | `README.md` | the pitch, install, how to use | — |
 | `AGENTS.md` (this) | promises, invariants, the module map, conventions, commands | every turn |
 | `design/decisions.md` | why this and not that — `D_` entries, FAQ-shaped | lazy |
+| `design/ideas/` | not yet decided — one file per idea, `ls` is the index, deleted on graduation | transient |
 | doc comments | what one symbol does and why it is shaped so | at the symbol |
 
 Every fact lives in exactly one of these; the others link to it.

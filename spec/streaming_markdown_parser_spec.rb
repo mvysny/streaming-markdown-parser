@@ -35,16 +35,57 @@ RSpec.describe StreamingMarkdownParser do
 
     > a quote
 
+    > ```
+    > quoted code
+    >
+    > after a quoted blank
+    > ```
+
+    Setext heading
+    ==============
+
+    - outer
+
+      - inner, loose
+
+      - inner again
+
+    - outer again
+
+        indented code
+
+        after a blank
+
+    <div>
+
+    raw HTML, blank lines and all
+
+    </div>
+
     ~~~
     unclosed until the end
   MD
+
+  # @param text [String]
+  # @param random [Random]
+  # @return [Array<String>] `text` in chunks of 1 to 80 characters: a chunk ends mid-line,
+  #   mid-fence or mid-list, and the next may finish several lines at once
+  def random_chunks(text, random)
+    chunks = []
+    at = 0
+    while at < text.size
+      size = random.rand(1..80)
+      chunks << text[at, size]
+      at += size
+    end
+    chunks
+  end
 
   describe 'whatever the deltas' do
     {
       'one delta' => ->(text) { [text] },
       'a character each' => :chars.to_proc,
       'a line each' => :lines.to_proc,
-      'random chunks' => ->(text) { text.chars.each_slice(7).map(&:join) },
       'cut right before newlines' => ->(text) { text.split(/(?=\n)/) }
     }.each do |name, split|
       it "ends in kramdown's blocks of the whole text: #{name}" do
@@ -52,6 +93,26 @@ RSpec.describe StreamingMarkdownParser do
         parser.finish
         assert_equal whole_blocks(reply), recorder.blocks
       end
+    end
+
+    it "ends in kramdown's blocks of the whole text: random chunks" do
+      seed = Random.new_seed
+      random = Random.new(seed)
+      want = whole_blocks(reply)
+      20.times do
+        recorder = Recorder.new
+        parser = described_class.new(recorder)
+        random_chunks(reply, random).each { parser.append(_1) }
+        parser.finish
+        assert_equal want, recorder.blocks, "seed #{seed}"
+      end
+    end
+
+    it "ends in kramdown's blocks of the whole text: CRLF line ends" do
+      crlf = reply.gsub("\n", "\r\n")
+      crlf.chars.each { parser.append(_1) }
+      parser.finish
+      assert_equal whole_blocks(crlf), recorder.blocks
     end
   end
 

@@ -11,8 +11,8 @@ class StreamingMarkdownParser
   # an em-dash and a `---` rule stay as they are.
   module Repair
     # @return [Regexp] a line of only pipes, dashes (ASCII, en, em), colons and spaces, with at
-    #   least one pipe after its first character
-    TABLE_SEPARATOR = /^[ \t]*\|?[ \t\-—–:]*\|[ \t\-—–:|]*$/
+    #   least one pipe after its first character; `\r?` as kramdown takes CRLF line ends
+    TABLE_SEPARATOR = /^[ \t]*\|?[ \t\-—–:]*\|[ \t\-—–:|]*\r?$/
 
     module_function
 
