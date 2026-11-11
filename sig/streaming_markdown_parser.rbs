@@ -39,9 +39,6 @@
 # 
 # Per delta, the cost is one parse of the open tail, plus one check per candidate cut.
 class StreamingMarkdownParser
-  EXTENSION_OPENER: Regexp
-  SPAN_CLOSED_OPENER: Regexp
-  MATH_KEPT: Regexp
   DEFAULT_OPTIONS: ::Hash[Symbol, Object]
   VERSION: String
 
@@ -100,16 +97,6 @@ class StreamingMarkdownParser
   # _@param_ `element`
   def element_shape: (Kramdown::Element element) -> ::Array[untyped]
 
-  # Sets {@closer} if `line` opens a block that only its closer ends. Each closer is kramdown's
-  # own: a fence's is a fence of its character, at least as long, alone on its line; an
-  # extension's is `{:/name}` or `{:/}`, alone on its line; math and a comment end at the first
-  # `$$` or `-->` after the opener, mid-line and on the opener's own line too.
-  # 
-  # _@param_ `line`
-  # 
-  # _@param_ `start` — where `line` starts in @source
-  def open_block: (String line, Integer start) -> void
-
   # _@param_ `start` — where an opener line starts in @source
   # 
   # _@param_ `closed` — that opener, closed on the spot
@@ -123,20 +110,136 @@ class StreamingMarkdownParser
   # _@return_ — the type of each block
   def types: (Kramdown::Element root) -> ::Array[Symbol]
 
-  # Clears {@closer} if `line` holds it.
+  # Sets {@closer} if `line` opens a block that only its closer ends, and kramdown agrees.
   # 
   # _@param_ `line`
   # 
-  # _@param_ `from` — where in `line` a closer may start: past the opener, on its own line
-  def await_closer: (String line, ?Integer from) -> void
+  # _@param_ `start` — where `line` starts in @source
+  def open_block: (String line, Integer start) -> void
 
-  # Scans a `$$` block again from the line after its opener, as kramdown reverts it to paragraphs:
-  # a fence inside counts now.
-  def revert_math: () -> void
+  # Hands `line` to the open block's closer and takes what it answers; see {Closer}.
+  # 
+  # _@param_ `line`
+  # 
+  # _@return_ — false if `line` comes after the block, to scan like any other
+  def watch: (String line) -> bool
 
   # _@return_ — the kramdown options every parse runs with; pass them to a
   # converter that needs them
   attr_reader options: ::Hash[Symbol, Object]
+
+  # The blocks that only their closer ends: fences, `$$` math, HTML comments and kramdown's
+  # extensions. Until the closer comes, kramdown reads paragraphs, so the parser takes no cut
+  # inside one. It holds the open block's closer and hands it each line, getting back the closer
+  # for the next:
+  # 
+  #   closer, rest = Closer.open("$$ a = b\n", 9)   # a Closer::Math; rest is " a = b\n"
+  #   closer = closer.watch(rest)                   # itself: still open
+  #   closer = closer.watch("c = d $$\n")           # a Closer::MathKept: math if the next line agrees
+  #   closer.watch("next\n")                        # Closer::Rewind[to: 9]: kramdown reverts it
+  # 
+  # `watch` answers itself while the block is open, nil once it closed on that line, {PASS} when
+  # the line comes after the block and is scanned like any other, or a {Rewind} when kramdown
+  # reverts the block to paragraphs, so a fence inside it counts after all.
+  # 
+  # Each closer is kramdown's own; one too loose takes a cut that the real closer then undoes.
+  module Closer
+    PASS: Symbol
+    EXTENSION: Regexp
+    MATH_KEPT: Regexp
+
+    # _@param_ `line` — a line where a block may start
+    # 
+    # _@param_ `body` — where the line after it starts in the source
+    # 
+    # _@return_ — the closer `line` opens, if any, and the rest of `line`
+    # after the opener, for that closer's first {#watch}
+    def self.open: (String line, Integer body) -> [Object, String]?
+
+    # Ends at a whole line: a fence of the same character, at least as long, or an extension's
+    # `{:/name}` or `{:/}`.
+    # 
+    # @!attribute [r] pattern
+    #   @return [Regexp] the closing line
+    # @!attribute [r] closed_opener
+    #   @return [String, nil] the opener closed on the spot, for kramdown to confirm it opens a
+    #     block; nil when no check is needed
+    class Line < Data
+      # _@param_ `line`
+      # 
+      # _@return_ — see {Closer}
+      def watch: (String line) -> Object?
+
+      # _@return_ — the closing line
+      attr_reader pattern: Regexp
+
+      # _@return_ — the opener closed on the spot, for kramdown to confirm it opens a
+      # block; nil when no check is needed
+      attr_reader closed_opener: String?
+    end
+
+    # Ends at the first `-->`, mid-line too. kramdown checks nothing after it.
+    # 
+    # @!attribute [r] opener
+    #   @return [String] `<!--` and the spaces before it
+    class Comment < Data
+      # _@return_ — see {Line#closed_opener}
+      def closed_opener: () -> String
+
+      # _@param_ `line`
+      # 
+      # _@return_ — see {Closer}
+      def watch: (String line) -> Object?
+
+      # _@return_ — `<!--` and the spaces before it
+      attr_reader opener: String
+    end
+
+    # Ends at the first `$$`, mid-line too; text after it on its line reverts the block.
+    # 
+    # @!attribute [r] opener
+    #   @return [String] `$$` and the spaces before it
+    # @!attribute [r] body
+    #   @return [Integer] where the line after the opener starts, to rescan from
+    class Math < Data
+      # _@return_ — see {Line#closed_opener}
+      def closed_opener: () -> String
+
+      # _@param_ `line`
+      # 
+      # _@return_ — see {Closer}
+      def watch: (String line) -> Object?
+
+      # _@return_ — `$$` and the spaces before it
+      attr_reader opener: String
+
+      # _@return_ — where the line after the opener starts, to rescan from
+      attr_reader body: Integer
+    end
+
+    # Judges the line after a `$$` block's closer: math only if it is blank, an IAL or `^`.
+    # 
+    # @!attribute [r] body
+    #   @return [Integer] see {Math#body}
+    class MathKept < Data
+      # _@param_ `line`
+      # 
+      # _@return_ — see {Closer}
+      def watch: (String line) -> Object
+
+      # _@return_ — see {Math#body}
+      attr_reader body: Integer
+    end
+
+    # kramdown reverted the block: scan again from `to`, with no block open.
+    # 
+    # @!attribute [r] to
+    #   @return [Integer] where in the source to scan from
+    class Rewind < Data
+      # _@return_ — where in the source to scan from
+      attr_reader to: Integer
+    end
+  end
 
   # Fixes what LLMs get wrong in Markdown before kramdown parses it. Today one thing: a table
   # separator row written with typographic dashes, which kramdown won't take, so the table falls

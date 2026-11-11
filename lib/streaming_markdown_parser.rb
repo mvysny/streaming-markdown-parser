@@ -5,6 +5,7 @@ require 'kramdown-parser-gfm'
 require_relative 'streaming_markdown_parser/version'
 require_relative 'streaming_markdown_parser/listener'
 require_relative 'streaming_markdown_parser/repair'
+require_relative 'streaming_markdown_parser/closer'
 
 # Parses Markdown as it streams in, an LLM reply delta by delta, into top-level blocks: each
 # finished block reaches the listener once, final, and the unfinished tail is parsed again on
@@ -47,20 +48,6 @@ require_relative 'streaming_markdown_parser/repair'
 #
 # Per delta, the cost is one parse of the open tail, plus one check per candidate cut.
 class StreamingMarkdownParser
-  # An extension kramdown knows, alone on its line. The self-closing `{::comment /}` opens nothing.
-  # @return [Regexp]
-  EXTENSION_OPENER = %r{\A {0,3}\{::(comment|nomarkdown|options)(?:\s.*?)?(?<!/)\}\s*\z}
-
-  # A `$$` or `<!--` line, if kramdown agrees it opens a block.
-  # @return [Regexp]
-  SPAN_CLOSED_OPENER = /\A {0,3}(\$\$|<!--)/
-
-  # The line kramdown needs right after a `$$` block's closer to keep it math: blank, an IAL or `^`.
-  # Anything else and kramdown reads it all again as paragraphs.
-  # @return [Regexp]
-  MATH_KEPT = /\A(?:#{Kramdown::Parser::Kramdown::BLOCK_BOUNDARY})/
-  private_constant :EXTENSION_OPENER, :SPAN_CLOSED_OPENER, :MATH_KEPT
-
   # @return [Hash{Symbol => Object}] GFM input, as LLMs write backtick fences and pipe tables;
   #   reply paragraphs reflow, so no hard wraps
   DEFAULT_OPTIONS = { input: 'GFM', hard_wrap: false }.freeze
@@ -77,8 +64,7 @@ class StreamingMarkdownParser
     @source = +''
     @open_from = 0 # where the open tail starts in @source
     @scan = 0 # the first line of @source not yet scanned
-    @closer = nil # what ends the open block: a Regexp for its whole line, a String anywhere
-    @math_body = nil # the line after an open or just-closed `$$`, to rescan if kramdown reverts it
+    @closer = nil # the open block's Closer, nil outside one
     @boundary = false # the last scanned line ended a block, if kramdown agrees
     @finished = false
   end
@@ -136,10 +122,8 @@ class StreamingMarkdownParser
       start = @scan
       @scan = newline + 1
       line = @source[start...@scan]
-      next await_closer(line) if @closer
-      next revert_math if @math_body && !MATH_KEPT.match?(line)
+      next if @closer && watch(line)
 
-      @math_body = nil
       if line.strip.empty?
         @boundary = true
       else
@@ -193,29 +177,6 @@ class StreamingMarkdownParser
      element.children.map { |child| element_shape(child) }]
   end
 
-  # Sets {@closer} if `line` opens a block that only its closer ends. Each closer is kramdown's
-  # own: a fence's is a fence of its character, at least as long, alone on its line; an
-  # extension's is `{:/name}` or `{:/}`, alone on its line; math and a comment end at the first
-  # `$$` or `-->` after the opener, mid-line and on the opener's own line too.
-  #
-  # @param line [String]
-  # @param start [Integer] where `line` starts in @source
-  # @return [void]
-  def open_block(line, start)
-    if (fence = line[/\A\s*(`{3,}|~{3,})/, 1])
-      @closer = /\A\s*#{Regexp.escape(fence[0])}{#{fence.size},}\s*\z/
-    elsif (name = line[EXTENSION_OPENER, 1])
-      @closer = %r{\A {0,3}\{:/(?:#{name})?\}\s*\z} if opens?(start, "#{line.chomp}\n{:/}\n")
-    elsif (opener = line.match(SPAN_CLOSED_OPENER))
-      math = opener[1] == '$$'
-      return unless opens?(start, "#{opener[0]}#{math ? '$$' : '-->'}\n")
-
-      @closer = math ? '$$' : '-->'
-      @math_body = @scan if math
-      await_closer(line, opener.end(0))
-    end
-  end
-
   # @param start [Integer] where an opener line starts in @source
   # @param closed [String] that opener, closed on the spot
   # @return [Boolean] true if kramdown reads an opener at `start`: the open text before it, then
@@ -229,30 +190,38 @@ class StreamingMarkdownParser
   # @return [Array<Symbol>] the type of each block
   def types(root) = root.children.map(&:type)
 
-  # Clears {@closer} if `line` holds it.
+  # Sets {@closer} if `line` opens a block that only its closer ends, and kramdown agrees.
   #
   # @param line [String]
-  # @param from [Integer] where in `line` a closer may start: past the opener, on its own line
+  # @param start [Integer] where `line` starts in @source
   # @return [void]
-  def await_closer(line, from = 0)
-    if @closer.is_a?(Regexp)
-      return unless @closer.match?(line)
-    else
-      return unless (at = line.index(@closer, from))
-      # kramdown checks nothing after `-->`, but text after `$$` reverts the math block.
-      return revert_math if @closer == '$$' && !line[(at + 2)..].strip.empty?
-    end
-    @closer = nil
-    @boundary = true
+  def open_block(line, start)
+    closer, rest = Closer.open(line, @scan)
+    return unless closer
+    return if closer.closed_opener && !opens?(start, closer.closed_opener)
+
+    @closer = closer
+    watch(rest)
   end
 
-  # Scans a `$$` block again from the line after its opener, as kramdown reverts it to paragraphs:
-  # a fence inside counts now.
+  # Hands `line` to the open block's closer and takes what it answers; see {Closer}.
   #
-  # @return [void]
-  def revert_math
-    @scan = @math_body
-    @math_body = @closer = nil
-    @boundary = false
+  # @param line [String]
+  # @return [Boolean] false if `line` comes after the block, to scan like any other
+  def watch(line)
+    after = @closer.watch(line)
+    case after
+    when Closer::PASS
+      @closer = nil
+      return false
+    when Closer::Rewind
+      @scan = after.to
+      @closer = nil
+      @boundary = false
+    else
+      @boundary = true unless after.equal?(@closer)
+      @closer = after
+    end
+    true
   end
 end
