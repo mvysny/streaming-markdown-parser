@@ -1,0 +1,6 @@
+/.bundle/
+/vendor/bundle/
+/.yardoc/
+/doc/
+/coverage/
+/.claude/settings.local.json

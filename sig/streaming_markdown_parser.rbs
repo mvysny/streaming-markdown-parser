@@ -1,0 +1,158 @@
+# Parses Markdown as it streams in, an LLM reply delta by delta, into top-level blocks: each
+# finished block reaches the listener once, final, and the unfinished tail is parsed again on
+# every delta. Blocks are kramdown trees, so any kramdown converter renders them.
+# 
+#   class HtmlView
+#     include StreamingMarkdownParser::Listener
+# 
+#     def initialize
+#       @done = +''
+#       @tail = ''
+#     end
+# 
+#     def on_block(root) = @done << Kramdown::Converter::Html.convert(root).first
+#     def on_open(root) = @tail = Kramdown::Converter::Html.convert(root).first
+#     def to_html = @done + @tail
+#   end
+# 
+#   parser = StreamingMarkdownParser.new(view = HtmlView.new)
+#   parser.append("Hello.\n\nWor")   # on_open: "Hello.", "Wor" (the next line may continue "Hello.")
+#   parser.append("ld.\n")           # on_block: "Hello.", as "World." began a new block
+#                                    # on_open: "World."
+#   parser.finish                    # on_block: "World."; on_open: empty
+#   view.to_html                     # => "<p>Hello.</p>\n<p>World.</p>\n"
+# 
+# A listener that wants only final output implements {Listener#on_block} alone.
+# 
+# == Implementation details
+# 
+# A cut between two blocks is taken only where kramdown agrees: once the first line after a
+# blank line (or after a closing fence) is complete, the open text before it is parsed alone, the
+# line alone, and both together, and the cut stands only if the blocks come out the same. So a
+# loose list's next item, an indented continuation or a definition keeps the block open, with no
+# Markdown rules written here. Inside an unclosed fence there is no cut at all: kramdown can't yet
+# tell it is a fence.
+# 
+# Per delta, the cost is one parse of the open tail, plus one check per candidate cut.
+class StreamingMarkdownParser
+  DEFAULT_OPTIONS: ::Hash[Symbol, Object]
+  VERSION: String
+
+  # _@param_ `listener` — receives the blocks
+  # 
+  # _@param_ `options` — kramdown options, merged over {DEFAULT_OPTIONS}
+  def initialize: (StreamingMarkdownParser::Listener listener, **::Hash[Symbol, Object] options) -> void
+
+  # Feeds one delta: commits every block it finishes, then re-parses the open tail. A nil or
+  # empty delta does nothing.
+  # 
+  # _@param_ `delta`
+  def append: (String? delta) -> void
+
+  # Ends the stream: the open tail becomes blocks, and an empty {Listener#on_open} clears it.
+  # 
+  # The streamed deltas may not add up to the final text (pikuri's deltas are a preview of its
+  # final message). Given a different `authoritative`, the listener gets {Listener#on_reset} and
+  # then every block of the authoritative text.
+  # 
+  # _@param_ `authoritative` — the final text, nil for the deltas as they came
+  def finish: (?String? authoritative) -> void
+
+  # _@return_ — true after {#finish}
+  def finished?: () -> bool
+
+  # _@return_ — the text so far: every delta, or the authoritative text after {#finish}
+  def source: () -> String
+
+  # Walks every complete line not yet scanned, committing at each cut kramdown agrees to.
+  def scan: () -> void
+
+  # _@param_ `cut` — a line start in @source
+  # 
+  # _@param_ `line_end` — the end of the line that starts at `cut`
+  # 
+  # _@return_ — true if kramdown parses the open text before `cut` and the line after it
+  # alone into the same blocks as together
+  def clean_cut?: (Integer cut, Integer line_end) -> bool
+
+  # Hands every block of the open text up to `cut` to the listener; the open tail starts there.
+  # 
+  # _@param_ `cut`
+  def commit: (Integer cut) -> void
+
+  # _@param_ `text`
+  # 
+  # _@return_ — the root, its blank-line elements dropped
+  def parse: (String text) -> Kramdown::Element
+
+  # _@param_ `root`
+  # 
+  # _@return_ — each block as nested arrays, line numbers left out, for comparing
+  def shape: (Kramdown::Element root) -> ::Array[::Array[untyped]]
+
+  # _@param_ `element`
+  def element_shape: (Kramdown::Element element) -> ::Array[untyped]
+
+  # _@param_ `line`
+  # 
+  # _@return_ — the fence's character and length if `line` opens one
+  def opened_fence: (String line) -> [String, Integer]?
+
+  # _@param_ `line`
+  # 
+  # _@return_ — true if `line` closes the open fence: the same character, at least as many
+  # of it, and nothing else
+  def closes_fence?: (String line) -> bool
+
+  # _@return_ — the kramdown options every parse runs with; pass them to a
+  # converter that needs them
+  attr_reader options: ::Hash[Symbol, Object]
+
+  # Fixes what LLMs get wrong in Markdown before kramdown parses it. Today one thing: a table
+  # separator row written with typographic dashes, which kramdown won't take, so the table falls
+  # apart into paragraphs of literal pipes.
+  # 
+  #   Repair.call("| a | b |\n|—-|—-|\n| 1 | 2 |")   # => "| a | b |\n|--|--|\n| 1 | 2 |"
+  # 
+  # Only a line made wholly of separator characters with an inner pipe is touched, so prose with
+  # an em-dash and a `---` rule stay as they are.
+  module Repair
+    TABLE_SEPARATOR: Regexp
+
+    # _@param_ `source` — Markdown
+    # 
+    # _@return_ — the repaired Markdown
+    def call: (String source) -> String
+
+    # _@param_ `source` — Markdown
+    # 
+    # _@return_ — the repaired Markdown
+    def self.call: (String source) -> String
+  end
+
+  # What a {StreamingMarkdownParser} calls. Include it and override what you use; the rest do
+  # nothing. Each call gets a kramdown root, so a converter takes it as is:
+  # 
+  #   def on_block(root) = @html << Kramdown::Converter::Html.convert(root).first
+  # 
+  # Calls come on the thread that called {StreamingMarkdownParser#append} or
+  # {StreamingMarkdownParser#finish}.
+  module Listener
+    # One finished top-level block, a root with that block as its only child. Final: it is never
+    # called back or changed, except by {#on_reset}.
+    # 
+    # _@param_ `root`
+    def on_block: (Kramdown::Element root) -> void
+
+    # The unfinished tail after the last finished block, parsed as it stands: zero or more
+    # blocks, provisional. Each call replaces the one before; after the stream ends, it comes
+    # empty.
+    # 
+    # _@param_ `root`
+    def on_open: (Kramdown::Element root) -> void
+
+    # The final text differed from the streamed one: forget every block so far, all of them come
+    # again.
+    def on_reset: () -> void
+  end
+end
