@@ -19,7 +19,7 @@ Ruby 3.3 or newer; the only dependencies are `kramdown` and `kramdown-parser-gfm
 ## Use
 
 A listener includes `StreamingMarkdownParser::Listener` and overrides what it needs. Every call
-gets a kramdown root, which any converter takes as it is:
+gets a kramdown root, which any converter takes (but see *Rendering block by block*):
 
 ```ruby
 class HtmlView
@@ -57,6 +57,18 @@ blocks it would have streamed as:
 root = StreamingMarkdownParser.parse(text)          # one root, for one converter call
 StreamingMarkdownParser.new(view).finish(text)      # or the same calls a stream makes, no on_reset
 ```
+
+### Rendering block by block
+
+Two things a whole-document render gets for free are the listener's job:
+
+- **Spacing between blocks.** The source's blank lines are dropped, so the listener puts its own
+  spacing between top-level blocks. HTML needs none, as `<p>` brings its own margin; a terminal
+  or plain-text converter does.
+- **State from block to block.** Each root is converted alone, so a converter that remembers
+  something across blocks needs the listener to carry it: the indent under the last header,
+  footnote numbers. Such an app takes a whole reply through `new(listener).finish(text)` too, not
+  `.parse`, so a reply renders alike however it arrived.
 
 ## When is a block finished?
 

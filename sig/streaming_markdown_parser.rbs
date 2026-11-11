@@ -296,7 +296,7 @@ class StreamingMarkdownParser
   end
 
   # What a {StreamingMarkdownParser} calls. Include it and override what you use; the rest do
-  # nothing. Each call gets a kramdown root, so a converter takes it as is:
+  # nothing. Each call gets a kramdown root, which a converter takes:
   # 
   #   def on_block(root) = @html << Kramdown::Converter::Html.convert(root).first
   # 
