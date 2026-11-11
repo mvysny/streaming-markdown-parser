@@ -235,6 +235,18 @@ RSpec.describe StreamingMarkdownParser do
     end
   end
 
+  describe '.parse' do
+    it 'repairs the text and drops blank-line elements' do
+      root = described_class.parse("Hi.\n\n| a |\n|—-|\n| 1 |\n")
+      assert_equal %i[p table], root.children.map(&:type)
+    end
+
+    it 'merges the options over the defaults' do
+      root = described_class.parse("a\nb\n", hard_wrap: true)
+      assert_equal "<p>a<br />\nb</p>\n", Kramdown::Converter::Html.convert(root).first
+    end
+  end
+
   describe '#finish' do
     it 'commits the open tail and clears it' do
       parser.append("Hello.\n\nWorld.")
@@ -248,6 +260,11 @@ RSpec.describe StreamingMarkdownParser do
       parser.finish('Hello.')
       refute(recorder.calls.any? { |name, _| name == :reset })
       assert_equal ["<p>Hello.</p>\n"], recorder.blocks
+    end
+
+    it 'given a whole text and no deltas, sends its blocks with no reset' do
+      parser.finish("Hello.\n\nWorld.\n")
+      assert_equal [[:block, "<p>Hello.</p>\n"], [:block, "<p>World.</p>\n"], [:open, '']], recorder.take
     end
 
     it 'given another text, resets and sends every block of it' do

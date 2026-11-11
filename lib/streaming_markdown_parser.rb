@@ -56,6 +56,24 @@ class StreamingMarkdownParser
   #   converter that needs them
   attr_reader :options
 
+  # Parses a reply that arrived whole into one root, holding the same blocks a stream of it
+  # sends to {Listener#on_block}, so a reply looks the same however it came.
+  #
+  #   root = StreamingMarkdownParser.parse("Hello.\n\nWorld.\n")
+  #   Kramdown::Converter::Html.convert(root).first   # => "<p>Hello.</p>\n<p>World.</p>\n"
+  #
+  # A listener takes a whole reply through {#finish} instead: `new(listener).finish(text)`.
+  # kramdown's warnings are dropped, as a stream's parses of fragments can't report the same ones.
+  #
+  # @param text [String]
+  # @param options [Hash{Symbol => Object}] kramdown options, merged over {DEFAULT_OPTIONS}
+  # @return [Kramdown::Element] the root, {Repair} applied and blank-line elements dropped
+  def self.parse(text, **options)
+    root = Kramdown::Document.new(Repair.call(text), **DEFAULT_OPTIONS, **options).root
+    root.children.reject! { |child| child.type == :blank }
+    root
+  end
+
   # @param listener [StreamingMarkdownParser::Listener] receives the blocks
   # @param options [Hash{Symbol => Object}] kramdown options, merged over {DEFAULT_OPTIONS}
   def initialize(listener, **options)
@@ -87,7 +105,9 @@ class StreamingMarkdownParser
   #
   # The streamed deltas may not add up to the final text (pikuri's deltas are a preview of its
   # final message). Given a different `authoritative`, the listener gets {Listener#on_reset} and
-  # then every block of the authoritative text.
+  # then every block of the authoritative text. With no deltas before, there is nothing to reset:
+  #
+  #   StreamingMarkdownParser.new(listener).finish(text)   # a whole reply: its blocks, no reset
   #
   # @param authoritative [String, nil] the final text, nil for the deltas as they came
   # @return [void]
@@ -96,8 +116,9 @@ class StreamingMarkdownParser
     raise 'StreamingMarkdownParser#finish called twice' if @finished
 
     @finished = true
-    reset = !authoritative.nil? && authoritative != @source
-    if reset
+    reset = false
+    if !authoritative.nil? && authoritative != @source
+      reset = !@source.empty?
       @source = authoritative.dup
       @open_from = 0
     end
@@ -172,12 +193,8 @@ class StreamingMarkdownParser
   end
 
   # @param text [String]
-  # @return [Kramdown::Element] the root, its blank-line elements dropped
-  def parse(text)
-    root = Kramdown::Document.new(Repair.call(text), **@options).root
-    root.children.reject! { |child| child.type == :blank }
-    root
-  end
+  # @return [Kramdown::Element] see {.parse}
+  def parse(text) = self.class.parse(text, **@options)
 
   # @param root [Kramdown::Element]
   # @return [Array<Array>] each block as nested arrays, line numbers left out, for comparing

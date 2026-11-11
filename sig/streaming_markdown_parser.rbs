@@ -42,6 +42,22 @@ class StreamingMarkdownParser
   DEFAULT_OPTIONS: ::Hash[Symbol, Object]
   VERSION: String
 
+  # Parses a reply that arrived whole into one root, holding the same blocks a stream of it
+  # sends to {Listener#on_block}, so a reply looks the same however it came.
+  # 
+  #   root = StreamingMarkdownParser.parse("Hello.\n\nWorld.\n")
+  #   Kramdown::Converter::Html.convert(root).first   # => "<p>Hello.</p>\n<p>World.</p>\n"
+  # 
+  # A listener takes a whole reply through {#finish} instead: `new(listener).finish(text)`.
+  # kramdown's warnings are dropped, as a stream's parses of fragments can't report the same ones.
+  # 
+  # _@param_ `text`
+  # 
+  # _@param_ `options` — kramdown options, merged over {DEFAULT_OPTIONS}
+  # 
+  # _@return_ — the root, {Repair} applied and blank-line elements dropped
+  def self.parse: (String text, **::Hash[Symbol, Object] options) -> Kramdown::Element
+
   # _@param_ `listener` — receives the blocks
   # 
   # _@param_ `options` — kramdown options, merged over {DEFAULT_OPTIONS}
@@ -57,7 +73,9 @@ class StreamingMarkdownParser
   # 
   # The streamed deltas may not add up to the final text (pikuri's deltas are a preview of its
   # final message). Given a different `authoritative`, the listener gets {Listener#on_reset} and
-  # then every block of the authoritative text.
+  # then every block of the authoritative text. With no deltas before, there is nothing to reset:
+  # 
+  #   StreamingMarkdownParser.new(listener).finish(text)   # a whole reply: its blocks, no reset
   # 
   # _@param_ `authoritative` — the final text, nil for the deltas as they came
   def finish: (?String? authoritative) -> void
@@ -100,7 +118,7 @@ class StreamingMarkdownParser
 
   # _@param_ `text`
   # 
-  # _@return_ — the root, its blank-line elements dropped
+  # _@return_ — see {.parse}
   def parse: (String text) -> Kramdown::Element
 
   # _@param_ `root`

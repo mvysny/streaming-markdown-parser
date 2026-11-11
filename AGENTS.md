@@ -32,7 +32,7 @@ Every fact lives in exactly one of these; the others link to it.
 
 ## Module map
 
-- `lib/streaming_markdown_parser.rb` — the parser: the cuts, the open tail, the finish and the reset.
+- `lib/streaming_markdown_parser.rb` — the parser: the cuts, the open tail, the finish and the reset, the one-shot parse.
 - `lib/streaming_markdown_parser/` — the listener interface, the closers of blocks kramdown can't see yet, the LLM repairs, the version.
 
 ## Conventions

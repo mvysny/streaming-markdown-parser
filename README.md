@@ -50,6 +50,14 @@ view.to_html                     # => "<p>Hello.</p>\n<p>World.</p>\n"
 
 A listener that wants only final output implements `on_block` alone.
 
+A reply that arrives whole (a non-streaming provider, a replayed transcript) parses into the same
+blocks it would have streamed as:
+
+```ruby
+root = StreamingMarkdownParser.parse(text)          # one root, for one converter call
+StreamingMarkdownParser.new(view).finish(text)      # or the same calls a stream makes, no on_reset
+```
+
 ## When is a block finished?
 
 When the next one has begun, as kramdown sees it. After a blank line, or a closing fence, the

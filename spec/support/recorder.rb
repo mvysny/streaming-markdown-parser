@@ -41,11 +41,10 @@ class Recorder
 end
 
 # @param markdown [String]
-# @return [Array<String>] each top-level block of kramdown's own parse of the whole text, as HTML
+# @return [Array<String>] each top-level block of the one-shot parse of the whole text, as HTML
 def whole_blocks(markdown)
-  root = Kramdown::Document.new(StreamingMarkdownParser::Repair.call(markdown),
-                                **StreamingMarkdownParser::DEFAULT_OPTIONS).root
-  root.children.reject { |child| child.type == :blank }.map do |block|
+  root = StreamingMarkdownParser.parse(markdown)
+  root.children.map do |block|
     single = Kramdown::Element.new(:root, nil, nil, root.options)
     single.children << block
     Kramdown::Converter::Html.convert(single).first
