@@ -12,8 +12,8 @@ class StreamingMarkdownParser
   # Don't raise. A raise propagates out of that `append` or `finish`, and the calls it still owed
   # are lost, not sent again: the parser goes on, but the listener's copy of the reply has a gap.
   module Listener
-    # One finished top-level block, a root with that block as its only child. Final: it is never
-    # called back or changed, except by {#on_reset}.
+    # One finished top-level block (a paragraph, a heading, a whole list), a root with that block
+    # as its only child. Final: it is never called back or changed, except by {#on_reset}.
     #
     # @param root [Kramdown::Element]
     # @return [void]

@@ -50,6 +50,10 @@ view.to_html                     # => "<p>Hello.</p>\n<p>World.</p>\n"
 
 A listener that wants only final output implements `on_block` alone.
 
+A block is one top-level element of the reply: a paragraph, a heading, a table, a fence, a rule,
+or a whole list or blockquote with everything inside it. In prose a block *is* a paragraph: each
+`on_block` is one finished paragraph, and the next one is in `on_open`.
+
 Once the stream ends, render the reply once more from its whole text, as only there does every
 reference link and footnote resolve (see *When is a block finished?*). The same goes for a reply
 that arrives whole (a non-streaming provider, a replayed transcript):
