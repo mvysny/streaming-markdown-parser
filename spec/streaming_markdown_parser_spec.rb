@@ -214,6 +214,25 @@ RSpec.describe StreamingMarkdownParser do
       err = assert_raises(RuntimeError) { parser.append('x') }
       assert_includes err.message, 'after #finish'
     end
+
+    it 'never sends a block twice, though the listener raised mid-commit' do
+      raising = Class.new(Recorder) do
+        attr_accessor :boom
+
+        def on_block(root)
+          super
+          raise 'boom' if boom
+        end
+      end.new
+      parser = described_class.new(raising)
+      parser.append("p\n# H\n\n")
+      raising.boom = true
+      assert_raises(RuntimeError) { parser.append("q\n") }
+      raising.boom = false
+      parser.append("\n")
+      parser.finish
+      assert_equal ["<p>p</p>\n", "<p>q</p>\n"], raising.blocks
+    end
   end
 
   describe '#finish' do

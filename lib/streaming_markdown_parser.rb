@@ -80,8 +80,7 @@ class StreamingMarkdownParser
     return if delta.nil? || delta.empty?
 
     @source << delta
-    scan
-    @listener.on_open(parse(@source[@open_from..]))
+    notify(scan, parse(@source[@open_from..]))
   end
 
   # Ends the stream: the open tail becomes blocks, and an empty {Listener#on_open} clears it.
@@ -97,13 +96,12 @@ class StreamingMarkdownParser
     raise 'StreamingMarkdownParser#finish called twice' if @finished
 
     @finished = true
-    if authoritative && authoritative != @source
-      @listener.on_reset
+    reset = !authoritative.nil? && authoritative != @source
+    if reset
       @source = authoritative.dup
       @open_from = 0
     end
-    commit(@source.size)
-    @listener.on_open(parse(''))
+    notify(commit(@source.size), parse(''), reset:)
   end
 
   # @return [Boolean] true after {#finish}
@@ -116,8 +114,9 @@ class StreamingMarkdownParser
 
   # Walks every complete line not yet scanned, committing at each cut kramdown agrees to.
   #
-  # @return [void]
+  # @return [Array<Kramdown::Element>] the committed blocks, for {#notify}
   def scan
+    blocks = []
     while (newline = @source.index("\n", @scan))
       start = @scan
       @scan = newline + 1
@@ -127,11 +126,12 @@ class StreamingMarkdownParser
       if line.strip.empty?
         @boundary = true
       else
-        commit(start) if @boundary && start > @open_from && clean_cut?(start, @scan)
+        blocks.concat(commit(start)) if @boundary && start > @open_from && clean_cut?(start, @scan)
         @boundary = false
         open_block(line, start)
       end
     end
+    blocks
   end
 
   # @param cut [Integer] a line start in @source
@@ -144,18 +144,31 @@ class StreamingMarkdownParser
     shape(parse(head + line)) == shape(parse(head)) + shape(parse(line))
   end
 
-  # Hands every block of the open text up to `cut` to the listener; the open tail starts there.
+  # Ends the open text at `cut`: the open tail starts there.
   #
   # @param cut [Integer]
-  # @return [void]
+  # @return [Array<Kramdown::Element>] every block of the text before `cut`, each in its own root
   def commit(cut)
     root = parse(@source[@open_from...cut])
-    root.children.each do |block|
+    @open_from = cut
+    root.children.map do |block|
       single = Kramdown::Element.new(:root, nil, nil, root.options.dup)
       single.children << block
-      @listener.on_block(single)
+      single
     end
-    @open_from = cut
+  end
+
+  # Calls the listener, the last step of {#append} and {#finish}: the parser's state is already
+  # final, so a listener that raises leaves nothing half-updated, and no block comes twice.
+  #
+  # @param blocks [Array<Kramdown::Element>] for {Listener#on_block}
+  # @param open [Kramdown::Element] for {Listener#on_open}
+  # @param reset [Boolean] true to call {Listener#on_reset} first
+  # @return [void]
+  def notify(blocks, open, reset: false)
+    @listener.on_reset if reset
+    blocks.each { |block| @listener.on_block(block) }
+    @listener.on_open(open)
   end
 
   # @param text [String]

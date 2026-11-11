@@ -8,6 +8,9 @@ class StreamingMarkdownParser
   #
   # Calls come on the thread that called {StreamingMarkdownParser#append} or
   # {StreamingMarkdownParser#finish}.
+  #
+  # Don't raise. A raise propagates out of that `append` or `finish`, and the calls it still owed
+  # are lost, not sent again: the parser goes on, but the listener's copy of the reply has a gap.
   module Listener
     # One finished top-level block, a root with that block as its only child. Final: it is never
     # called back or changed, except by {#on_reset}.
