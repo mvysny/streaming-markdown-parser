@@ -71,9 +71,10 @@ footnotes list.
 
 Two things a whole-document render gets for free are the listener's job:
 
-- **Spacing between blocks.** The source's blank lines are dropped, so the listener puts its own
-  spacing between top-level blocks. HTML needs none, as `<p>` brings its own margin; a terminal
-  or plain-text converter does.
+- **Spacing between blocks.** Blocks stack vertically, each below the last at full width, never
+  side by side, and with no separator but a rule the reply itself has. The source's blank lines
+  are dropped, so the listener puts its own spacing between them. HTML needs none, as `<p>`
+  brings its own margin; a terminal or plain-text converter does.
 - **State from block to block.** Each root is converted alone, so a converter that remembers
   something across blocks needs the listener to carry it: the indent under the last header,
   footnote numbers. Such an app takes a whole reply through `new(listener).finish(text)` too, not
