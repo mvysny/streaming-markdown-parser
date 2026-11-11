@@ -27,14 +27,21 @@
 # == Implementation details
 # 
 # A cut between two blocks is taken only where kramdown agrees: once the first line after a
-# blank line (or after a closing fence) is complete, the open text before it is parsed alone, the
-# line alone, and both together, and the cut stands only if the blocks come out the same. So a
-# loose list's next item, an indented continuation or a definition keeps the block open, with no
-# Markdown rules written here. Inside an unclosed fence there is no cut at all: kramdown can't yet
-# tell it is a fence.
+# blank line (or after a closer) is complete, the open text before it is parsed alone, the line
+# alone, and both together, and the cut stands only if the blocks come out the same. So a loose
+# list's next item, an indented continuation or a definition keeps the block open, with no
+# Markdown rules written here.
+# 
+# Inside an unclosed fence, `$$` math block, HTML comment or `{::comment}`-style extension there
+# is no cut at all: kramdown reads paragraphs until the closer comes, and the closer would undo
+# the cut. Whether a `$$`, `<!--` or extension line opens one, kramdown judges too, as a fence
+# missed inside a block wrongly held open is a cut inside that fence.
 # 
 # Per delta, the cost is one parse of the open tail, plus one check per candidate cut.
 class StreamingMarkdownParser
+  EXTENSION_OPENER: Regexp
+  SPAN_CLOSED_OPENER: Regexp
+  MATH_KEPT: Regexp
   DEFAULT_OPTIONS: ::Hash[Symbol, Object]
   VERSION: String
 
@@ -93,16 +100,39 @@ class StreamingMarkdownParser
   # _@param_ `element`
   def element_shape: (Kramdown::Element element) -> ::Array[untyped]
 
+  # Sets {@closer} if `line` opens a block that only its closer ends. Each closer is kramdown's
+  # own: a fence's is a fence of its character, at least as long, alone on its line; an
+  # extension's is `{:/name}` or `{:/}`, alone on its line; math and a comment end at the first
+  # `$$` or `-->` after the opener, mid-line and on the opener's own line too.
+  # 
   # _@param_ `line`
   # 
-  # _@return_ — the fence's character and length if `line` opens one
-  def opened_fence: (String line) -> [String, Integer]?
+  # _@param_ `start` — where `line` starts in @source
+  def open_block: (String line, Integer start) -> void
 
+  # _@param_ `start` — where an opener line starts in @source
+  # 
+  # _@param_ `closed` — that opener, closed on the spot
+  # 
+  # _@return_ — true if kramdown reads an opener at `start`: the open text before it, then
+  # `closed`, parse into the blocks of each alone. After a paragraph line, `$$` is inline math.
+  def opens?: (Integer start, String closed) -> bool
+
+  # _@param_ `root`
+  # 
+  # _@return_ — the type of each block
+  def types: (Kramdown::Element root) -> ::Array[Symbol]
+
+  # Clears {@closer} if `line` holds it.
+  # 
   # _@param_ `line`
   # 
-  # _@return_ — true if `line` closes the open fence: the same character, at least as many
-  # of it, and nothing else
-  def closes_fence?: (String line) -> bool
+  # _@param_ `from` — where in `line` a closer may start: past the opener, on its own line
+  def await_closer: (String line, ?Integer from) -> void
+
+  # Scans a `$$` block again from the line after its opener, as kramdown reverts it to paragraphs:
+  # a fence inside counts now.
+  def revert_math: () -> void
 
   # _@return_ — the kramdown options every parse runs with; pass them to a
   # converter that needs them

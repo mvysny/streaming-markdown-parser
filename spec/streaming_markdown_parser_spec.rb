@@ -62,6 +62,39 @@ RSpec.describe StreamingMarkdownParser do
 
     </div>
 
+    $$
+    a = b
+
+    c = d $$
+
+    $$ one line $$
+
+    $$
+    reverted by the text after its closer
+
+    ```
+    code $$ tail
+
+    more
+    ```
+
+    <!--
+
+    hidden --> shown
+
+    {::comment}
+
+    hidden
+
+    {:/comment}
+
+    {::nomarkdown}
+    <b>raw</b>
+
+    {:/}
+
+    {::comment /}
+
     ~~~
     unclosed until the end
   MD
@@ -143,6 +176,21 @@ RSpec.describe StreamingMarkdownParser do
     it 'takes only a closing fence of the same character, at least as long' do
       parser.append("````\n~~~~\n```\n````\nAfter.\n")
       assert_equal ["<pre><code>~~~~\n```\n</code></pre>\n"], recorder.blocks
+    end
+
+    it 'never cuts inside a $$ block, blank lines and all' do
+      parser.append("$$\na = b\n\nc = d\n")
+      assert_empty recorder.blocks
+      parser.append("$$\n\nAfter.\n")
+      assert_equal 1, recorder.blocks.size
+      assert_includes recorder.blocks.first, 'a = b'
+    end
+
+    it 'opens no $$ block where kramdown reads inline math, so a fence inside still counts' do
+      text = "para\n$$\n\n```\nx\n\ny $$\n\nz\n```\n"
+      text.each_char { parser.append(_1) }
+      parser.finish
+      assert_equal whole_blocks(text), recorder.blocks
     end
 
     it 'commits the blocks before an interrupted list, not the list' do

@@ -28,7 +28,7 @@ Every fact lives in exactly one of these; the others link to it.
 ## Invariants
 
 - **A cut needs kramdown's agreement.** A block committed on a hand-written rule may be one that later text changes. See `D_kramdown_judges_cuts`.
-- **No cut inside an unclosed fence.** kramdown can't tell a fence there yet, so its agreement means nothing.
+- **No cut inside an unclosed fence, `$$` block, HTML comment or `{::comment}`-style extension.** kramdown can't tell one there yet, so its agreement means nothing; whether a line opens one, kramdown judges.
 
 ## Module map
 

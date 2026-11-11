@@ -35,14 +35,32 @@ require_relative 'streaming_markdown_parser/repair'
 # == Implementation details
 #
 # A cut between two blocks is taken only where kramdown agrees: once the first line after a
-# blank line (or after a closing fence) is complete, the open text before it is parsed alone, the
-# line alone, and both together, and the cut stands only if the blocks come out the same. So a
-# loose list's next item, an indented continuation or a definition keeps the block open, with no
-# Markdown rules written here. Inside an unclosed fence there is no cut at all: kramdown can't yet
-# tell it is a fence.
+# blank line (or after a closer) is complete, the open text before it is parsed alone, the line
+# alone, and both together, and the cut stands only if the blocks come out the same. So a loose
+# list's next item, an indented continuation or a definition keeps the block open, with no
+# Markdown rules written here.
+#
+# Inside an unclosed fence, `$$` math block, HTML comment or `{::comment}`-style extension there
+# is no cut at all: kramdown reads paragraphs until the closer comes, and the closer would undo
+# the cut. Whether a `$$`, `<!--` or extension line opens one, kramdown judges too, as a fence
+# missed inside a block wrongly held open is a cut inside that fence.
 #
 # Per delta, the cost is one parse of the open tail, plus one check per candidate cut.
 class StreamingMarkdownParser
+  # An extension kramdown knows, alone on its line. The self-closing `{::comment /}` opens nothing.
+  # @return [Regexp]
+  EXTENSION_OPENER = %r{\A {0,3}\{::(comment|nomarkdown|options)(?:\s.*?)?(?<!/)\}\s*\z}
+
+  # A `$$` or `<!--` line, if kramdown agrees it opens a block.
+  # @return [Regexp]
+  SPAN_CLOSED_OPENER = /\A {0,3}(\$\$|<!--)/
+
+  # The line kramdown needs right after a `$$` block's closer to keep it math: blank, an IAL or `^`.
+  # Anything else and kramdown reads it all again as paragraphs.
+  # @return [Regexp]
+  MATH_KEPT = /\A(?:#{Kramdown::Parser::Kramdown::BLOCK_BOUNDARY})/
+  private_constant :EXTENSION_OPENER, :SPAN_CLOSED_OPENER, :MATH_KEPT
+
   # @return [Hash{Symbol => Object}] GFM input, as LLMs write backtick fences and pipe tables;
   #   reply paragraphs reflow, so no hard wraps
   DEFAULT_OPTIONS = { input: 'GFM', hard_wrap: false }.freeze
@@ -59,7 +77,8 @@ class StreamingMarkdownParser
     @source = +''
     @open_from = 0 # where the open tail starts in @source
     @scan = 0 # the first line of @source not yet scanned
-    @fence = nil # the open fence's [char, length], or nil outside one
+    @closer = nil # what ends the open block: a Regexp for its whole line, a String anywhere
+    @math_body = nil # the line after an open or just-closed `$$`, to rescan if kramdown reverts it
     @boundary = false # the last scanned line ended a block, if kramdown agrees
     @finished = false
   end
@@ -117,15 +136,16 @@ class StreamingMarkdownParser
       start = @scan
       @scan = newline + 1
       line = @source[start...@scan]
-      if @fence
-        @boundary = closes_fence?(line)
-        @fence = nil if @boundary
-      elsif line.strip.empty?
+      next await_closer(line) if @closer
+      next revert_math if @math_body && !MATH_KEPT.match?(line)
+
+      @math_body = nil
+      if line.strip.empty?
         @boundary = true
       else
         commit(start) if @boundary && start > @open_from && clean_cut?(start, @scan)
         @boundary = false
-        @fence = opened_fence(line)
+        open_block(line, start)
       end
     end
   end
@@ -173,18 +193,66 @@ class StreamingMarkdownParser
      element.children.map { |child| element_shape(child) }]
   end
 
+  # Sets {@closer} if `line` opens a block that only its closer ends. Each closer is kramdown's
+  # own: a fence's is a fence of its character, at least as long, alone on its line; an
+  # extension's is `{:/name}` or `{:/}`, alone on its line; math and a comment end at the first
+  # `$$` or `-->` after the opener, mid-line and on the opener's own line too.
+  #
   # @param line [String]
-  # @return [Array(String, Integer), nil] the fence's character and length if `line` opens one
-  def opened_fence(line)
-    marker = line[/\A\s*(`{3,}|~{3,})/, 1]
-    marker && [marker[0], marker.size]
+  # @param start [Integer] where `line` starts in @source
+  # @return [void]
+  def open_block(line, start)
+    if (fence = line[/\A\s*(`{3,}|~{3,})/, 1])
+      @closer = /\A\s*#{Regexp.escape(fence[0])}{#{fence.size},}\s*\z/
+    elsif (name = line[EXTENSION_OPENER, 1])
+      @closer = %r{\A {0,3}\{:/(?:#{name})?\}\s*\z} if opens?(start, "#{line.chomp}\n{:/}\n")
+    elsif (opener = line.match(SPAN_CLOSED_OPENER))
+      math = opener[1] == '$$'
+      return unless opens?(start, "#{opener[0]}#{math ? '$$' : '-->'}\n")
+
+      @closer = math ? '$$' : '-->'
+      @math_body = @scan if math
+      await_closer(line, opener.end(0))
+    end
   end
 
+  # @param start [Integer] where an opener line starts in @source
+  # @param closed [String] that opener, closed on the spot
+  # @return [Boolean] true if kramdown reads an opener at `start`: the open text before it, then
+  #   `closed`, parse into the blocks of each alone. After a paragraph line, `$$` is inline math.
+  def opens?(start, closed)
+    head = @source[@open_from...start]
+    types(parse(head + closed)) == types(parse(head)) + types(parse(closed))
+  end
+
+  # @param root [Kramdown::Element]
+  # @return [Array<Symbol>] the type of each block
+  def types(root) = root.children.map(&:type)
+
+  # Clears {@closer} if `line` holds it.
+  #
   # @param line [String]
-  # @return [Boolean] true if `line` closes the open fence: the same character, at least as many
-  #   of it, and nothing else
-  def closes_fence?(line)
-    marker = line[/\A\s*(`{3,}|~{3,})\s*\z/, 1]
-    !marker.nil? && marker[0] == @fence[0] && marker.size >= @fence[1]
+  # @param from [Integer] where in `line` a closer may start: past the opener, on its own line
+  # @return [void]
+  def await_closer(line, from = 0)
+    if @closer.is_a?(Regexp)
+      return unless @closer.match?(line)
+    else
+      return unless (at = line.index(@closer, from))
+      # kramdown checks nothing after `-->`, but text after `$$` reverts the math block.
+      return revert_math if @closer == '$$' && !line[(at + 2)..].strip.empty?
+    end
+    @closer = nil
+    @boundary = true
+  end
+
+  # Scans a `$$` block again from the line after its opener, as kramdown reverts it to paragraphs:
+  # a fence inside counts now.
+  #
+  # @return [void]
+  def revert_math
+    @scan = @math_body
+    @math_body = @closer = nil
+    @boundary = false
   end
 end

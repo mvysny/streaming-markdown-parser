@@ -33,6 +33,8 @@ the same blocks as both together. Why not rules, such as "commit at every blank 
 fence": a loose list, an indented continuation, a fence inside a list item and a definition all
 span blank lines, and each rule only approximates kramdown, which isn't CommonMark either.
 Committing early is the one mistake a final block can't take back; kramdown's agreement makes the
-cut as right as the parse of the whole text, for two small extra parses per candidate. Fences are
-still tracked by hand: inside an unclosed one, kramdown sees paragraphs, and would agree to a cut
-that the closing fence then undoes.
+cut as right as the parse of the whole text, for two small extra parses per candidate. Blocks that
+only their closer ends — fences, `$$`, HTML comments, `{::comment}` and kin — are tracked by hand:
+inside an unclosed one, kramdown sees paragraphs, and would agree to a cut that the closer then
+undoes. A hand rule there only refuses cuts, and kramdown still judges whether a line opens such a
+block: one held open by mistake hides the fence inside it.
