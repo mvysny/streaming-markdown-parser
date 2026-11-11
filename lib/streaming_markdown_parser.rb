@@ -206,9 +206,11 @@ class StreamingMarkdownParser
   def shape(root) = root.children.map { |child| element_shape(child) }
 
   # @param element [Kramdown::Element]
-  # @return [Array]
+  # @return [Array] a value that is itself an element, a footnote's definition, as its shape too:
+  #   elements compare by identity, so two parses of one footnote would never agree on a cut
   def element_shape(element)
-    [element.type, element.value, element.attr, element.options.except(:location),
+    value = element.value.is_a?(Kramdown::Element) ? element_shape(element.value) : element.value
+    [element.type, value, element.attr, element.options.except(:location),
      element.children.map { |child| element_shape(child) }]
   end
 

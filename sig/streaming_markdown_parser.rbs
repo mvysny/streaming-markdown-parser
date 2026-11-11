@@ -132,6 +132,9 @@ class StreamingMarkdownParser
   def shape: (Kramdown::Element root) -> ::Array[::Array[untyped]]
 
   # _@param_ `element`
+  # 
+  # _@return_ — a value that is itself an element, a footnote's definition, as its shape too:
+  # elements compare by identity, so two parses of one footnote would never agree on a cut
   def element_shape: (Kramdown::Element element) -> ::Array[untyped]
 
   # _@param_ `start` — where an opener line starts in @source

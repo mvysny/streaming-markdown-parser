@@ -100,6 +100,11 @@ Two things a whole-document render gets for free are the listener's job:
   something across blocks needs the listener to carry it: the indent under the last header,
   footnote numbers. Such an app takes a whole reply through `new(listener).finish(text)` too, not
   `.parse`, so a reply renders alike however it arrived.
+- **Footnotes.** A `:footnote` span holds its label in `options[:name]` and its definition, a
+  `:footnote_def` element, in `value`: not a String, so a converter's catch-all that prints
+  `value` prints the element. The definition block itself is gone from the tree, and the number
+  is the converter's: kramdown's HTML converter numbers each root from 1 and writes the endnotes
+  after it, so block by block the numbers restart at 1 and each block repeats its own endnotes.
 
 ## When is a block finished?
 

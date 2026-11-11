@@ -21,6 +21,12 @@ RSpec.describe StreamingMarkdownParser do
 
     [^n]: It yields to a gentle squeeze.
 
+    Fridges slow it[^c].
+
+    [^c]: USDA, 2024.
+
+    So does the cold[^c].
+
     - loose list, first item
 
     - second item, with a continuation:
@@ -139,6 +145,11 @@ RSpec.describe StreamingMarkdownParser do
       end
     end
 
+    it 'commits every block but the unclosed last one before #finish, fed a line each' do
+      reply.lines.each { parser.append(_1) }
+      assert_equal whole_blocks(reply)[...-1], recorder.blocks
+    end
+
     it "ends in kramdown's blocks of the whole text: random chunks" do
       seed = Random.new_seed
       random = Random.new(seed)
@@ -230,6 +241,21 @@ RSpec.describe StreamingMarkdownParser do
         assert_includes recorder.blocks, "<p>See [the docs][1].</p>\n"
         assert_includes whole_blocks(text), "<p>See <a href=\"https://example.com\">the docs</a>.</p>\n"
       end
+    end
+
+    it 'leaves a footnote literal for good when its definition is a block away, which .parse resolves' do
+      text = "Fridge works[^a].\n\nMore.\n\n[^a]: USDA, 2024.\n"
+      text.each_char { parser.append(_1) }
+      parser.finish
+      assert_includes recorder.blocks, "<p>Fridge works[^a].</p>\n"
+      assert_includes whole_blocks(text).first, 'USDA, 2024.'
+    end
+
+    it 'commits the blocks after a resolved footnote' do
+      parser.append("Fridge works[^a].\n\n[^a]: USDA, 2024.\n\nMore.\n\nLast.\n")
+      assert_equal 2, recorder.blocks.size
+      assert_includes recorder.blocks.first, 'USDA, 2024.'
+      assert_equal "<p>Last.</p>\n", recorder.open
     end
 
     it 'raises after #finish' do
