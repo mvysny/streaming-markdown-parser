@@ -47,12 +47,13 @@ view.to_html                     # => "<p>Hello.</p>\n<p>World.</p>\n"
 |---|---|---|
 | `on_block(root)` | a top-level block is finished: a paragraph, a list, a table, a fence | yes, sent once |
 | `on_open(root)` | after every delta: the tail after the last finished block | no, each replaces the last |
-| `on_reset` | `finish(text)` got a final text that differs from the deltas | drop every block so far; the final text's blocks follow, from the first |
+| `on_reset` | `finish(text)` got a final text that differs from the deltas | drop every block of this reply; the final text's blocks follow, from the first |
 
 A listener that wants only final output implements `on_block` alone.
 
-One parser per reply: after `finish`, `append` and another `finish` raise. Take a new parser for
-the next reply; the listener may stay.
+One parser and one listener per reply: after `finish`, `append` and another `finish` raise, and
+`on_reset` drops every block the listener holds, so a listener shared with an earlier reply would
+lose that reply too.
 
 A block is one top-level element of the reply: a paragraph, a heading, a table, a fence, a rule,
 or a whole list or blockquote with everything inside it. In prose a block *is* a paragraph: each
@@ -81,8 +82,8 @@ the deltas added up. Pass it to `finish(text)`:
 - **A different text:** the change may be anywhere, even in the first block, so no block sent
   so far can be trusted. The parser starts over, all within that `finish` call: `on_reset`,
   then `on_block` for every block of the final text from the first, then an empty `on_open`.
-  The listener drops what it built on `on_reset` and builds the reply again from the calls that
-  follow, as `HtmlView` above does.
+  The listener drops what it built for this reply on `on_reset` and builds it again from the
+  calls that follow, as `HtmlView` above does.
 
 `finish` with no text takes the deltas as they came and never resets. Neither does a parser
 that got no delta before `finish(text)`, as there is nothing to drop.
