@@ -10,6 +10,17 @@ RSpec.describe StreamingMarkdownParser do
 
     Ripe ones go to the **fridge**; unripe ones stay out.
 
+    See [the guide][g] on ripening.
+
+    [g]: https://example.com/guide
+
+    [s]: https://example.com/store
+    Buy them at [the store][s].
+
+    Ripeness takes days[^n].
+
+    [^n]: It yields to a gentle squeeze.
+
     - loose list, first item
 
     - second item, with a continuation:
@@ -207,6 +218,18 @@ RSpec.describe StreamingMarkdownParser do
     it 'repairs a table separator written with em-dashes' do
       parser.append("| a | b |\n|—-|—-|\n| 1 | 2 |\n\nAfter.\n")
       assert_includes recorder.blocks.first, '<table>'
+    end
+
+    {
+      'defined a block later' => "See [the docs][1].\n\nMore.\n\n[1]: https://example.com\n",
+      'reused a block after its definition' => "[1]: https://example.com\nSee [it][1].\n\nMore.\n\nSee [the docs][1].\n"
+    }.each do |name, text|
+      it "leaves a reference literal for good, which .parse resolves: #{name}" do
+        text.each_char { parser.append(_1) }
+        parser.finish
+        assert_includes recorder.blocks, "<p>See [the docs][1].</p>\n"
+        assert_includes whole_blocks(text), "<p>See <a href=\"https://example.com\">the docs</a>.</p>\n"
+      end
     end
 
     it 'raises after #finish' do

@@ -33,6 +33,9 @@ require_relative 'streaming_markdown_parser/closer'
 #
 # A listener that wants only final output implements {Listener#on_block} alone.
 #
+# A reference link or footnote whose definition is a block away streams as literal text, and
+# stays so: render the ended reply once more from {.parse}. See `D_references_stay_literal`.
+#
 # == Implementation details
 #
 # A cut between two blocks is taken only where kramdown agrees: once the first line after a
@@ -56,8 +59,8 @@ class StreamingMarkdownParser
   #   converter that needs them
   attr_reader :options
 
-  # Parses a reply that arrived whole into one root, holding the same blocks a stream of it
-  # sends to {Listener#on_block}, so a reply looks the same however it came.
+  # Parses a whole reply into one root: one that arrived whole, or a streamed one once it ends,
+  # as only the whole text resolves a reference whose definition is a block away.
   #
   #   root = StreamingMarkdownParser.parse("Hello.\n\nWorld.\n")
   #   Kramdown::Converter::Html.convert(root).first   # => "<p>Hello.</p>\n<p>World.</p>\n"
@@ -108,6 +111,8 @@ class StreamingMarkdownParser
   # then every block of the authoritative text. With no deltas before, there is nothing to reset:
   #
   #   StreamingMarkdownParser.new(listener).finish(text)   # a whole reply: its blocks, no reset
+  #
+  # Given the streamed text, it parses nothing again, so its references stay as they streamed.
   #
   # @param authoritative [String, nil] the final text, nil for the deltas as they came
   # @return [void]

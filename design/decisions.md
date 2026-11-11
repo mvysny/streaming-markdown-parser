@@ -38,3 +38,15 @@ only their closer ends — fences, `$$`, HTML comments, `{::comment}` and kin �
 inside an unclosed one, kramdown sees paragraphs, and would agree to a cut that the closer then
 undoes. A hand rule there only refuses cuts, and kramdown still judges whether a line opens such a
 block: one held open by mistake hides the fence inside it.
+
+## D_references_stay_literal — Why does a reference a block away from its definition stay literal rather than resolve?
+
+kramdown resolves `[text][1]` and `[^a]` against definitions anywhere in the text, but each side
+of a cut is parsed alone. Its agreement keeps a definition with the block right next to it; one a
+block or more away, before or after, leaves the reference literal and the definition rendering as
+nothing. Why not resolve it: a definition yet to come can't be known, so being right means taking
+final blocks back, a reset that resends the whole reply. Why not carry committed definitions into
+later parses (kramdown's `link_defs:`): it mends only the backward half, footnotes have no such
+option, and the end-of-reply render fixes both anyway. Why not hold the cut while kramdown warns
+of a missing definition: bare `[brackets]` in prose warn alike, and such a reply never streams.
+An LLM reply ends whole, so the app renders it once more with `parse`, which resolves them all.

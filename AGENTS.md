@@ -10,7 +10,7 @@ keeps its own kramdown converter.
 ## Promises
 
 - **Final means final.** A block handed to `on_block` never changes; when in doubt, a block stays open.
-- **The same blocks as the whole text.** However a reply is cut into deltas, its finished blocks are kramdown's parse of all of it.
+- **The same blocks as the whole text.** However a reply is cut into deltas, its finished blocks are kramdown's parse of all of it, but for a reference whose definition is a block away: that stays literal until `parse` of the whole reply. See `D_references_stay_literal`.
 - **Parsing only.** kramdown is the one dependency, and drawing stays with each app.
 
 ## Design docs

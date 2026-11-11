@@ -50,13 +50,18 @@ view.to_html                     # => "<p>Hello.</p>\n<p>World.</p>\n"
 
 A listener that wants only final output implements `on_block` alone.
 
-A reply that arrives whole (a non-streaming provider, a replayed transcript) parses into the same
-blocks it would have streamed as:
+Once the stream ends, render the reply once more from its whole text, as only there does every
+reference link and footnote resolve (see *When is a block finished?*). The same goes for a reply
+that arrives whole (a non-streaming provider, a replayed transcript):
 
 ```ruby
 root = StreamingMarkdownParser.parse(text)          # one root, for one converter call
 StreamingMarkdownParser.new(view).finish(text)      # or the same calls a stream makes, no on_reset
 ```
+
+Take a fresh parser for that: the streaming one's `finish(text)`, given the text it streamed,
+keeps the blocks it sent. And convert `parse`'s root in one call, or each block gets its own
+footnotes list.
 
 ### Rendering block by block
 
@@ -76,7 +81,13 @@ When the next one has begun, as kramdown sees it. After a blank line, or a closi
 first complete line is parsed with the open text before it, and alone. Only if the blocks come
 out the same is the cut taken, so a loose list, an indented continuation or a fenced block inside
 a list item stays open until it truly ends. However the reply is cut into deltas, the blocks equal
-kramdown's parse of the whole text.
+kramdown's parse of the whole text, references aside.
+
+A reference link (`[the docs][1]`) or footnote (`[^a]`) resolves against a definition anywhere in
+the text, but each side of a cut is parsed alone. A definition right before or after the block
+stays with it; one a block or more away leaves the reference literal, and the definition shows as
+nothing. A model that cites its sources at the end streams `[the docs][1]` and no URL. The parser
+never takes such a block back: the render of the whole reply at the end resolves it.
 
 Before parsing, `StreamingMarkdownParser::Repair` fixes what LLMs get wrong; today, a table
 separator written with em-dashes (`|—-|`), which kramdown would not take for a table.
