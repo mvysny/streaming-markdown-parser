@@ -32,13 +32,14 @@ class HtmlView
 
   def on_block(root) = @done << Kramdown::Converter::Html.convert(root).first
   def on_open(root) = @tail = Kramdown::Converter::Html.convert(root).first
+  def on_reset = @done.clear
   def to_html = @done + @tail
 end
 
 parser = StreamingMarkdownParser.new(view = HtmlView.new)
 parser.append("Hello.\n\nWor")   # on_open: "Hello.", "Wor" (the next line may continue "Hello.")
 parser.append("ld.\n")           # on_block: "Hello."; on_open: "World."
-parser.finish                    # on_block: "World."; on_open: empty
+parser.finish                    # on_block: "World."; on_open: empty (no text given: no on_reset)
 view.to_html                     # => "<p>Hello.</p>\n<p>World.</p>\n"
 ```
 
@@ -46,9 +47,12 @@ view.to_html                     # => "<p>Hello.</p>\n<p>World.</p>\n"
 |---|---|---|
 | `on_block(root)` | a top-level block is finished: a paragraph, a list, a table, a fence | yes, sent once |
 | `on_open(root)` | after every delta: the tail after the last finished block | no, each replaces the last |
-| `on_reset` | `finish(text)` got a final text that differs from the deltas | forget all blocks; they come again |
+| `on_reset` | `finish(text)` got a final text that differs from the deltas | drop every block so far; the final text's blocks follow, from the first |
 
 A listener that wants only final output implements `on_block` alone.
+
+One parser per reply: after `finish`, `append` and another `finish` raise. Take a new parser for
+the next reply; the listener may stay.
 
 A block is one top-level element of the reply: a paragraph, a heading, a table, a fence, a rule,
 or a whole list or blockquote with everything inside it. In prose a block *is* a paragraph: each
@@ -66,6 +70,22 @@ StreamingMarkdownParser.new(view).finish(text)      # or the same calls a stream
 Take a fresh parser for that: the streaming one's `finish(text)`, given the text it streamed,
 keeps the blocks it sent. And convert `parse`'s root in one call, or each block gets its own
 footnotes list.
+
+### When the final text differs
+
+Some providers stream a preview, and the final message they hand over at the end is not quite
+the deltas added up. Pass it to `finish(text)`:
+
+- **The same text as the deltas:** an ordinary finish. The open tail becomes blocks, and the
+  blocks already sent stay.
+- **A different text:** the change may be anywhere, even in the first block, so no block sent
+  so far can be trusted. The parser starts over, all within that `finish` call: `on_reset`,
+  then `on_block` for every block of the final text from the first, then an empty `on_open`.
+  The listener drops what it built on `on_reset` and builds the reply again from the calls that
+  follow, as `HtmlView` above does.
+
+`finish` with no text takes the deltas as they came and never resets. Neither does a parser
+that got no delta before `finish(text)`, as there is nothing to drop.
 
 ### Rendering block by block
 
