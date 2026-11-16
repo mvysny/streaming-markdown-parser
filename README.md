@@ -7,12 +7,12 @@ keeps its own kramdown converter.
 
 ## Install
 
-Not on RubyGems; depend on the git repository, and let `Gemfile.lock` pin the commit:
-
 ```ruby
-gem 'streaming-markdown-parser', git: 'https://github.com/mvysny/streaming-markdown-parser.git',
-                                 branch: 'master', require: 'streaming_markdown_parser'
+gem 'streaming-markdown-parser', '~> 0.1.0', require: 'streaming_markdown_parser'
 ```
+
+Before 1.0 a minor version may break the API, hence the `~> 0.1.0`. Outside Bundler,
+`gem install streaming-markdown-parser`, then `require 'streaming_markdown_parser'`.
 
 Ruby 3.3 or newer; the only dependencies are `kramdown` and `kramdown-parser-gfm`.
 

@@ -4,3 +4,4 @@
 /doc/
 /coverage/
 /.claude/settings.local.json
+/*.gem

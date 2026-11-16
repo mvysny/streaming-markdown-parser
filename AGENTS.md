@@ -39,7 +39,7 @@ Every fact lives in exactly one of these; the others link to it.
 
 - **Ruby ≥ 3.3, and no runtime dependency but kramdown and its GFM parser.** `require_relative` inside `lib/`, no Zeitwerk.
 - **Errors are loud.** Misuse raises: an `append` after `finish`, a second `finish`.
-- **Pre-1.0, consumed by a pinned commit:** break the API freely; each app moves its pin on purpose.
+- **Pre-1.0, on RubyGems:** break the API freely, but only in a minor bump (`0.x.0`); a patch never breaks.
 - **A new construct joins the reply in the property spec**, which checks every delta split against kramdown's parse of the whole text.
 
 ## Commands
@@ -49,6 +49,7 @@ Every fact lives in exactly one of these; the others link to it.
 - `bundle exec rspec spec/streaming_markdown_parser_spec.rb:42` — one spec.
 - `bundle lock --add-checksums` — after any Gemfile change, or CI's frozen bundle rejects the lockfile.
 - `design/verify_design_tripwires.sh` — the doc-layer tripwire.
+- A release: bump `version.rb`, the gate, `gem build streaming-markdown-parser.gemspec`, `gem push` the `.gem` (MFA asks for an OTP), tag `v<version>`.
 
 ## Skills this project follows
 
